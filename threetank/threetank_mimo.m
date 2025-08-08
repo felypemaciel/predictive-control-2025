@@ -1,8 +1,4 @@
-%% Model Predictive Control for MIMO systems
-% Example of the page 139 of Camacho's Book using Quadprog function
-
-clear all; clc; close all;
-% set(groot, 'defaultAxesTickLabelInterpreter','latex'); set(groot, 'defaultLegendInterpreter','latex'); set(groot,'defaultTextInterpreter','latex');
+clear all; clc; % close all;
 
 S = 0.0154;     % tank cross sectional area (m2)
 Sp = 5E-5;      % inter tank cross sectional area (m2)
@@ -20,17 +16,16 @@ G1 = tf(42.21, [1, 0.002745]);
 G2 = tf(10.30, [1, 0.002378]);
 G3 = tf(10.30, [1, 0.002378]);
 G4 = tf(19.84, [1, 0.004738]);
-GG = [G1 G2; G3 G4]
+GG = [G1 G2; G3 G4];
 
 % Sampling time
-Ts = 0.03;
+Ts = 0.5;
 
-GGd = c2d(GG,Ts,'zoh')  % Discretization
+GGd = c2d(GG,Ts,'zoh');  % Discretization
 
-% return
 %% Controller tuning parameters
 % Prediction horizon
-N = 3;
+N = 100;
 % Control horizon
 Nu = 2;
 
@@ -39,24 +34,22 @@ R = eye(2*Nu);
 Q = 0.5*eye(2*N);
 
 % Constraints
-du_min = -0.1e-4;
-du_max = 0.1e-4;
-u_min = 0;
-u_max = 1.2e-4;
-y_min = 0;
-y_max = 0.6;
-% return
+du_min = -0.5e-4;   % m3/s
+du_max = 0.5e-4;    % m3/s
+u_min = 0;          % m3/s
+u_max = 1.2e-4;     % m3/s
+y_min = 0;          % m
+y_max = 0.6;        % m
+
 %% CARIMA model
 delta = [1 -1];
-Delta = tf(1,delta,Ts,'Variable','z^-1'); % Δ = 1 - z^-1
+Delta = tf(1,delta,Ts,'Variable','z^-1'); 
 
-% Polynomials b(z^-1) and a(z^-1)
 [b1,a1] = tfdata(GGd(1,1),'v');
 [b2,a2] = tfdata(GGd(1,2),'v');
 [b3,a3] = tfdata(GGd(2,1),'v');
 [b4,a4] = tfdata(GGd(2,2),'v');
 
-% Disturbance rejection polynomial c(z^-1) 
 c1  = conv([1 0],[1 0]);
 c2  = conv([1 0],[1 0]);
 
@@ -77,9 +70,8 @@ b3t = [b3t zeros(1,Max-(length(b3t)-1))];
 b4t = [b4t zeros(1,Max-(length(b4t)-1))];
 c1 = [c1 zeros(1,Max-(length(c1)-1))];
 c2 = [c2 zeros(1,Max-(length(c2)-1))];
-% return
+
 %% State-Space formulation observable cannonical form
-% Augmented Matrices
 A1 = [-a1t(2:end)' [eye(length(a1t)-2); zeros(1,length(a1t)-2)]];
 A2 = [-a2t(2:end)' [eye(length(a2t)-2); zeros(1,length(a2t)-2)]];
 A = [A1 zeros(size(A1)); zeros(size(A2)) A2];
@@ -88,12 +80,12 @@ B2=[b2t(2:end)]';
 B3=[b3t(2:end)]';
 B4=[b4t(2:end)]';
 B=[B1 B2; B3 B4];
-D1 = [c1(2:end)'-a1t(2:end)'];
-D2 = [c2(2:end)'-a2t(2:end)'];
+D1 = c1(2:end)'-a1t(2:end)';
+D2 = c2(2:end)'-a2t(2:end)';
 D = [D1 zeros(size(D1)); zeros(size(D2)) D2];
 H = [1 zeros(1,Max-1)];
 H = [H zeros(size(H)); zeros(size(H)) H];
-% return
+
 %% Prediction Matrix
 G = zeros(2*N,2*Nu);
 for i=1:N
@@ -103,55 +95,32 @@ for i=1:N
         end
     end
 end
-G;
 
 F = zeros(N * size(H,1), size(A,2));
 for i = 1:N
     row_idx = (i-1)*size(H,1)+1 : i*size(H,1);
     F(row_idx, :) = H * A^i;
 end
-F;
 
 E = zeros(N * size(H,1), size(D,2));
 for i = 1:N
     row_idx = (i-1)*size(H,1)+1 : i*size(H,1);
     E(row_idx, :) = H * A^(i-1) * D;
 end
-E;
-% return
+
 %% Simulation parameters
+
 % Time parameters
-Tfinal = 600;
-n_samples = Tfinal/Ts;
+Tfinal = 600;   % seconds
+n_samples = ceil(Tfinal/Ts);
 
-% Reference parameters
+% References
 r1 = 0.2;
-r2 = 0.1;
-
-% % Reference and disturbance arrays
-% ref = [zeros(Tr1,1); r1*ones(Tr2-Tr1,1); (r1+r2)*ones(qntd_k-Tr2,1)];
-% q = [zeros(Tpert,1); pert*ones(qntd_k-Tpert,1)];
+r2 = 0.15;
 
 %% GPC
 % Quadratic equation HH
 HH = 2*(G'*Q*G + R);
-
-% Constraints matrix Ac
-% Acon = [ G %-ones(size(G));
-%         -G %-ones(size(G));
-%          ones(2,2) zeros(2,2);
-%         -ones(2,2) zeros(2,2);
-%          ones(1,2) zeros(1,2);
-%         -ones(1,2) zeros(1,2)];
-
-% Acon = [ 1  0 0 0
-%         -1  0 0 0
-%          1  0 0 0 
-%          0  1 0 0
-%         -1  0 0 0
-%          0 -1 0 0
-%          G
-%         -G];
 
 Acon = [ 1  zeros(1,2*Nu-1)
         -1  zeros(1,2*Nu-1)
@@ -175,8 +144,6 @@ e0 = zeros(2,1);
 [~,z03] = filter(b3(2:end),a3,0);
 [~,z04] = filter(b4(2:end),a4,0);
 
-x03 = [0, 0, 0];
-
 du = zeros(2,n_samples);
 
 tic;
@@ -192,15 +159,15 @@ for k=1:n_samples
     end
 
     % references
-    if k > 100/Ts
+    if k > 150/Ts
         r1 = 0.3;
     end
-    if k > 400/Ts
-        r1 = 0.2;
+    if k > 250/Ts
+        r1 = 0.4;
     end
-    % if k > 500/Ts
-    %     r1 = 0.3;
-    % end
+    if k > 350/Ts
+        r1 = 0.35;
+    end
 
     % r2 = r1/2;
     r = repmat([r1; r2], ceil(2*N/2), 1);
@@ -219,7 +186,7 @@ for k=1:n_samples
 
     % QP solver
     opt = optimoptions('quadprog','Display','off');
-    % Acon = []; Bcon = []; % -> let uncomment to remove constraints
+    % Acon = []; Bcon = []; 
     sol = quadprog(HH,bb,Acon,Bcon,[],[],[],[],[],opt);
 
     du(:,k) = sol(1:2);
@@ -251,7 +218,7 @@ t = 0:Ts:Tfinal-Ts;
 figure
 subplot(2,2,1)
 hold on
-stairs(t,y(1,:), 'linewidth', 1)
+plot(t,y(1,:), 'linewidth', 1)
 plot(t,ref(1,:), '--k', 'linewidth', 1)
 xlabel('t (sec)')
 ylabel('h_1 (m)')
@@ -272,3 +239,8 @@ subplot(2,2,4)
 plot(t,u(2,:), 'linewidth', 1)
 xlabel('t (sec)')
 ylabel('Q_2 (m^3/s)')
+
+%% export data
+data = [ref(1:2,:)', y', u'];
+matrix_name = ['data',num2str(N),'.mat'];
+save(matrix_name,'data');
